@@ -1,0 +1,211 @@
+#!/bin/sh
+# phonectl v2 - 手机控制工具（增强版）
+# 新增：wait_stable / wait_text / tap_and_wait / uidump_json / input_text / goto
+
+export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+
+ADB_CMD="adb -s localhost:5555"
+SCREENSHOT_DIR="/sdcard"
+UI_DUMP_FILE="/sdcard/ui.xml"
+
+adb_shell() {
+    $ADB_CMD shell "$@" 2>&1
+}
+
+# 将 UI 树 dump 到文件再读取（/dev/tty 方式在 SSH 管道中会输出为空）
+ui_dump() {
+    adb_shell "uiautomator dump $UI_DUMP_FILE" >/dev/null 2>&1
+    adb_shell "cat $UI_DUMP_FILE"
+}
+
+# 获取 UI 树的 md5 摘要（用于检测页面是否稳定）
+get_ui_hash() {
+    ui_dump 2>/dev/null | md5sum | cut -d' ' -f1
+}
+
+case "$1" in
+    # === Touch & Gesture ===
+    tap)
+        adb_shell "input tap $2 $3"
+        ;;
+    longpress)
+        duration=${4:-1000}
+        adb_shell "input swipe $2 $3 $2 $3 $duration"
+        ;;
+    swipe)
+        duration=${6:-300}
+        adb_shell "input swipe $2 $3 $4 $5 $duration"
+        ;;
+    scroll_up)
+        adb_shell "input swipe 540 1600 540 800 400"
+        ;;
+    scroll_down)
+        adb_shell "input swipe 540 800 540 1600 400"
+        ;;
+
+    # === Key Events ===
+    key)   adb_shell "input keyevent $2" ;;
+    home)  adb_shell "input keyevent KEYCODE_HOME" ;;
+    back)  adb_shell "input keyevent KEYCODE_BACK" ;;
+    power) adb_shell "input keyevent KEYCODE_POWER" ;;
+    enter) adb_shell "input keyevent KEYCODE_ENTER" ;;
+    menu)  adb_shell "input keyevent KEYCODE_MENU" ;;
+
+    # === Screen Capture ===
+    screenshot)
+        filename=${2:-$SCREENSHOT_DIR/screen.png}
+        adb_shell "screencap -p $filename"
+        echo "$filename"
+        ;;
+
+    # === UI Inspection ===
+    uidump)
+        ui_dump 2>/dev/null | grep -v "UI hierchary dumped"
+        ;;
+    uidump_text)
+        ui_dump 2>/dev/null | \
+            grep -oP 'text="[^"]*"' | \
+            sed 's/text="//;s/"$//' | \
+            grep -v '^$' | sort -u
+        ;;
+    uidump_json)
+        # 新增：结构化 JSON 输出所有可见元素（文字+坐标+类名）
+        ui_dump 2>/dev/null | \
+            grep -oP 'text="[^"]*"[^>]*class="[^"]*"[^>]*bounds="\[[0-9,\[\]]+\]"' | \
+            sed 's/text="\([^"]*\)".*class="\([^"]*\)".*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]"/{"text":"\1","class":"\2","x":\3,"y":\4,"x2":\5,"y2":\6}/' | \
+            awk 'BEGIN{print "["} NR>1{printf ","} {print} END{print "]"}'
+        ;;
+    find_text)
+        keyword="$2"
+        ui_dump 2>/dev/null | \
+            grep -oP "text=\"[^\"]*$keyword[^\"]*\"[^>]*bounds=\"\[[0-9,\[\]]+\]\"" | \
+            sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/' | \
+            awk '{print "x="int(($1+$3)/2)" y="int(($2+$4)/2)}'
+        ;;
+    tap_text)
+        keyword="$2"
+        coords=$(ui_dump 2>/dev/null | \
+            grep -oP "text=\"[^\"]*$keyword[^\"]*\"[^>]*bounds=\"\[[0-9,\[\]]+\]\"" | \
+            head -1 | \
+            sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/' | \
+            awk '{print int(($1+$3)/2)" "int(($2+$4)/2)}')
+        if [ -n "$coords" ]; then
+            adb_shell "input tap $coords"
+            echo "Tapped: $coords"
+        else
+            echo "Text not found: $keyword"
+            exit 1
+        fi
+        ;;
+
+    # === 新增：等待逻辑 ===
+    wait_stable)
+        # 等待页面UI稳定（连续两次dump一致），超时默认10秒
+        timeout=${2:-10}
+        elapsed=0
+        prev=$(get_ui_hash)
+        while [ $elapsed -lt $timeout ]; do
+            sleep 1
+            elapsed=$((elapsed + 1))
+            curr=$(get_ui_hash)
+            if [ "$prev" = "$curr" ]; then
+                echo "stable after ${elapsed}s"
+                exit 0
+            fi
+            prev=$curr
+        done
+        echo "timeout after ${timeout}s"
+        exit 1
+        ;;
+    wait_text)
+        # 等待指定文字出现在屏幕上，超时默认15秒
+        keyword="$2"
+        timeout=${3:-15}
+        elapsed=0
+        while [ $elapsed -lt $timeout ]; do
+            found=$(ui_dump 2>/dev/null | grep -c "$keyword")
+            if [ "$found" -gt 0 ]; then
+                echo "found after ${elapsed}s"
+                exit 0
+            fi
+            sleep 1
+            elapsed=$((elapsed + 1))
+        done
+        echo "text not found after ${timeout}s: $keyword"
+        exit 1
+        ;;
+    tap_and_wait)
+        # 点击文字后等待页面稳定
+        keyword="$2"
+        $0 tap_text "$keyword" && sleep 1 && $0 wait_stable ${3:-8}
+        ;;
+
+    # === 新增：文字输入 ===
+    input_text)
+        # 在当前焦点输入文字（支持中英文，中文通过 ADB broadcast）
+        text="$2"
+        # 检测是否含非ASCII字符
+        if printf '%s' "$text" | grep -qP '[^\x00-\x7F]'; then
+            # 中文用 am broadcast 方式（需要 ADBKeyboard）
+            adb_shell "am broadcast -a ADB_INPUT_TEXT --es msg '$text'"
+        else
+            adb_shell "input text '$text'"
+        fi
+        ;;
+
+    # === App Control ===
+    current_app)
+        adb_shell "dumpsys window | grep mCurrentFocus" | \
+            sed 's/.*{[^}]*\s\([^/}]*\)\/\([^}]*\)}.*/\1/'
+        ;;
+    launch_pkg)
+        adb_shell "monkey -p $2 -c android.intent.category.LAUNCHER 1"
+        ;;
+    open_url)
+        adb_shell "am start -a android.intent.action.VIEW -d '$2'"
+        ;;
+
+    # === 新增：常用路径快捷方式 ===
+    goto)
+        case "$2" in
+            zhihu_creator)
+                adb_shell "am start -a android.intent.action.VIEW -d 'https://www.zhihu.com/creator'"
+                ;;
+            zhihu_activity)
+                adb_shell "am start -a android.intent.action.VIEW -d 'https://www.zhihu.com/creator/activity'"
+                ;;
+            settings)
+                adb_shell "am start -a android.settings.SETTINGS"
+                ;;
+            chrome)
+                adb_shell "am start -n com.android.chrome/com.google.android.apps.chrome.Main"
+                ;;
+            *)
+                echo "Unknown shortcut: $2"
+                echo "Available: zhihu_creator / zhihu_activity / settings / chrome"
+                exit 1
+                ;;
+        esac
+        ;;
+
+    # === System ===
+    shell)
+        shift
+        adb_shell "$@"
+        ;;
+
+    *)
+        echo "phonectl v2 - 手机控制工具"
+        echo ""
+        echo "触控: tap / longpress / swipe / scroll_up / scroll_down"
+        echo "按键: home / back / power / enter / menu / key"
+        echo "截屏: screenshot"
+        echo "UI:   uidump / uidump_text / uidump_json / find_text / tap_text"
+        echo "等待: wait_stable [秒] / wait_text <文字> [秒] / tap_and_wait <文字>"
+        echo "输入: input_text <文字>"
+        echo "应用: current_app / launch_pkg / open_url"
+        echo "快捷: goto zhihu_creator / zhihu_activity / settings / chrome"
+        echo "系统: shell <命令>"
+        exit 1
+        ;;
+esac

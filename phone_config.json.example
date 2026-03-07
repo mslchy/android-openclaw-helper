@@ -1,0 +1,39 @@
+{
+  "nicknames": {
+    "user": "你的昵称",
+    "phone_agent": "手机Agent名称",
+    "desktop_agent": "桌面端AI名称"
+  },
+  "networks": {
+    "你的WiFi名称": {
+      "name": "网络名称",
+      "phone_ip": "手机IP地址"
+    },
+    "default": {
+      "name": "默认网络",
+      "phone_ip": "默认手机IP"
+    }
+  },
+  "ssh_config": {
+    "port": 8022,
+    "user": "在手机执行 whoami 查询",
+    "ports_to_forward": [
+      18789,
+      18791,
+      18792,
+      8080
+    ]
+  },
+  "services": {
+    "openclaw": {
+      "webui_port": 18789,
+      "api_port": 18791,
+      "health_port": 18792,
+      "token": "在手机执行 cat ~/.openclaw/openclaw.json | grep token 查询"
+    },
+    "code_server": {
+      "port": 8080,
+      "password": "在手机执行 cat ~/.config/code-server/config.yaml 查询"
+    }
+  }
+}

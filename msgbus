@@ -1,0 +1,105 @@
+#!/bin/sh
+# msgbus - 桌面端AI与手机OpenClaw的双向消息总线
+# 用法:
+#   msgbus send <to> <message>     发送消息
+#   msgbus recv <from>             读取未读消息
+#   msgbus list <from>             列出所有消息
+#   msgbus clear <from>            清空已读消息
+#
+# 说明:
+#   to/from 可用值: tuanzhang (发送给手机OpenClaw), kelao (发送给桌面端AI)
+
+MSG_DIR="$HOME/messages"
+KELAO_TO_TUANZHANG="$MSG_DIR/kelao_to_tuanzhang"
+TUANZHANG_TO_KELAO="$MSG_DIR/tuanzhang_to_kelao"
+
+# 初始化目录
+mkdir -p "$KELAO_TO_TUANZHANG" "$TUANZHANG_TO_KELAO"
+
+# 生成消息文件名（时间戳+序号）
+next_msg_file() {
+    dir="$1"
+    ts=$(date +%Y%m%d_%H%M%S)
+    seq=1
+    while [ -f "$dir/${ts}_$(printf '%03d' $seq).msg" ]; do
+        seq=$((seq + 1))
+    done
+    echo "$dir/${ts}_$(printf '%03d' $seq).msg"
+}
+
+case "$1" in
+    send)
+        to="$2"
+        shift 2
+        message="$*"
+        if [ "$to" = "tuanzhang" ]; then
+            outdir="$KELAO_TO_TUANZHANG"
+        elif [ "$to" = "kelao" ]; then
+            outdir="$TUANZHANG_TO_KELAO"
+        else
+            echo "Unknown recipient: $to (use: tuanzhang / kelao)"
+            exit 1
+        fi
+        msgfile=$(next_msg_file "$outdir")
+        echo "$message" > "$msgfile"
+        echo "sent: $(basename $msgfile)"
+        ;;
+    recv)
+        from="$2"
+        if [ "$from" = "tuanzhang" ]; then
+            indir="$TUANZHANG_TO_KELAO"
+        elif [ "$from" = "kelao" ]; then
+            indir="$KELAO_TO_TUANZHANG"
+        else
+            echo "Unknown sender: $from (use: tuanzhang / kelao)"
+            exit 1
+        fi
+        # 读取所有未读消息（.msg 文件），读后改为 .read
+        found=0
+        for f in "$indir"/*.msg; do
+            [ -f "$f" ] || continue
+            found=1
+            echo "=== $(basename $f) ==="
+            cat "$f"
+            mv "$f" "${f%.msg}.read"
+            echo ""
+        done
+        if [ $found -eq 0 ]; then
+            echo "no new messages"
+        fi
+        ;;
+    list)
+        from="$2"
+        if [ "$from" = "tuanzhang" ]; then
+            indir="$TUANZHANG_TO_KELAO"
+        elif [ "$from" = "kelao" ]; then
+            indir="$KELAO_TO_TUANZHANG"
+        else
+            echo "Unknown sender: $from (use: tuanzhang / kelao)"
+            exit 1
+        fi
+        ls -1 "$indir"/ 2>/dev/null | head -50
+        ;;
+    clear)
+        from="$2"
+        if [ "$from" = "tuanzhang" ]; then
+            indir="$TUANZHANG_TO_KELAO"
+        elif [ "$from" = "kelao" ]; then
+            indir="$KELAO_TO_TUANZHANG"
+        else
+            echo "Unknown sender: $from (use: tuanzhang / kelao)"
+            exit 1
+        fi
+        rm -f "$indir"/*.read
+        echo "cleared"
+        ;;
+    *)
+        echo "msgbus - 桌面端AI与手机OpenClaw双向消息总线"
+        echo ""
+        echo "  send <to> <message>   发送消息 (to: tuanzhang=手机端, kelao=桌面端)"
+        echo "  recv <from>           读取未读消息 (from: tuanzhang/kelao)"
+        echo "  list <from>           列出所有消息"
+        echo "  clear <from>          清空已读消息"
+        exit 1
+        ;;
+esac
