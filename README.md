@@ -1,6 +1,6 @@
-# AI 手机远程控制系统
+# 关于手机部署openclaw的桌面端小助手
 
-一个让桌面端 AI（如 Claude Code、OpenCode）能够通过 SSH + ADB 远程操控 Android 手机的完整解决方案。
+一个让桌面端 AI（如 Claude Code、OpenCode）能够通过 SSH + ADB 远程操控 Android 手机的小工具。
 
 ## 系统架构
 
