@@ -1,6 +1,6 @@
-# AI Phone Remote Control System
+# OpenClaw Android Helper
 
-A complete solution that enables desktop AI (like Claude Code, OpenCode) to remotely control Android phones via SSH + ADB.
+A helper tool that enables users on Windows desktop to better manage OpenClaw Agent running on Android phones.
 
 ## System Architecture
 
@@ -41,7 +41,7 @@ A complete solution that enables desktop AI (like Claude Code, OpenCode) to remo
 
 ```bash
 git clone <your-repo-url>
-cd android-openclaw-helper
+cd openclaw-android-helper
 ```
 
 ### 2. Configure
@@ -244,7 +244,7 @@ adb connect localhost:5555
 ## Project Structure
 
 ```
-android-openclaw-helper/
+openclaw-android-helper/
 ├── phone_cli.py          # Interactive CLI
 ├── phone_manager.py      # Command-line tool
 ├── phone_config.json     # Configuration file

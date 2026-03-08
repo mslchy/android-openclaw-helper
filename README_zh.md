@@ -1,67 +1,66 @@
-# AI Phone Remote Control System
+# OpenClaw Android Helper
 
-A complete solution that enables desktop AI (like Claude Code, OpenCode) to remotely control Android phones via SSH + ADB.
+一个帮助用户在 Windows 桌面上更好地管理 Android 手机上运行的 OpenClaw Agent 的小助手。
 
-## System Architecture
+## 系统架构
 
 ```
 ┌─────────────────┐         SSH + ADB         ┌─────────────────┐
-│   Desktop AI    │ ◄────────────────────────► │   Phone AI      │
-│  (Claude Code)  │                            │(OpenClaw Agent) │
+│   桌面端 AI     │ ◄────────────────────────► │   手机端 AI     │
+│  (Claude Code)  │                            │ (OpenClaw Agent)│
 └─────────────────┘                            └─────────────────┘
        │                                               │
-       │ Access via tunnel                             │ Control phone
+       │ 通过隧道访问                                  │ 控制手机
        ▼                                               ▼
 ┌─────────────────┐                            ┌─────────────────┐
-│  Browser Access │                            │  Android System │
-│  - Web UI       │                            │  - Screenshot   │
-│  - Code Server  │                            │  - Tap/Click    │
-└─────────────────┘                            │  - UI Analysis  │
-                                                └─────────────────┘
+│  浏览器访问     │                            │  Android 系统   │
+│  - Web UI       │                            │  - 截图/点击    │
+│  - Code Server  │                            │  - UI 分析      │
+└─────────────────┘                            └─────────────────┘
 ```
 
-## Core Features
+## 核心功能
 
-- 🔗 **SSH Tunnel** - Remotely access phone services
-- 📱 **Phone Screen Control** - Screenshot, tap, swipe, text recognition
-- 🌐 **Web UI** - Manage phone Agent via browser
-- 💻 **Code Server** - Edit phone code in browser
-- 🔄 **Message Bus** - Async communication between desktop and phone AI
-- 🔧 **CDP Remote Debug** - Direct Chrome DOM manipulation for Web tasks
+- 🔗 **SSH 隧道连接** - 远程访问手机服务
+- 📱 **手机屏幕控制** - 截图、点击、滑动、文字识别
+- 🌐 **Web UI 管理** - 通过浏览器管理手机端 Agent
+- 💻 **Code Server** - 在浏览器中编辑手机端代码
+- 🔄 **双向消息总线** - 桌面端 AI 与手机端 AI 异步通信
+- 🔧 **CDP 远程调试** - 直接操作 Chrome DOM，适用于 Web 任务
 
-## Quick Start
+## 快速开始
 
-### Prerequisites
+### 前置要求
 
-- Windows/Mac/Linux PC
-- Android phone with Termux installed
-- Same WiFi network
+- Windows/Mac/Linux 电脑
+- Android 手机（已安装 Termux）
+- 同一 WiFi 网络
 
-### 1. Clone Project
+### 1. 克隆项目
 
 ```bash
 git clone <your-repo-url>
-cd android-openclaw-helper
+cd openclaw-android-helper
 ```
 
-### 2. Configure
+### 2. 配置文件
 
-Edit `phone_config.json`:
+编辑 `phone_config.json`：
 
 ```json
 {
   "nicknames": {
-    "user": "Your Name",
-    "phone_agent": "PhoneAgentName",
-    "desktop_agent": "DesktopAgentName"
+    "user": "你的昵称",
+    "phone_agent": "手机Agent名称",
+    "desktop_agent": "桌面端AI名称"
   },
   "networks": {
-    "YourWiFi": {
-      "name": "NetworkName",
+    "你的WiFi名称": {
+      "name": "网络名称",
       "phone_ip": "192.168.x.x"
     },
     "default": {
-      "name": "DefaultNetwork",
+      "name": "默认网络",
       "phone_ip": "192.168.x.x"
     }
   },
@@ -75,11 +74,11 @@ Edit `phone_config.json`:
       "webui_port": 18789,
       "api_port": 18791,
       "health_port": 18792,
-      "token": "YourGatewayToken"
+      "token": "你的GatewayToken"
     },
     "code_server": {
       "port": 8080,
-      "password": "YourCodeServerPassword"
+      "password": "你的CodeServer密码"
     }
   },
   "adb": {
@@ -88,183 +87,183 @@ Edit `phone_config.json`:
 }
 ```
 
-### 3. Start CLI
+### 3. 启动 CLI
 
 ```bash
 # Windows
 python phone_cli.py
 
-# Or double-click start_cli.bat
+# 或双击 start_cli.bat
 ```
 
-### 4. Use Menu
+### 4. 使用菜单
 
 ```
-Main Menu:
-  1. System Status
-  2. Establish SSH Tunnel
-  3. Open Web UI
-  4. Open Code Server
-  5. Connect Termux Terminal
-  6. Desktop ↔ Phone Communication Guide
-  7. Restore ADB Connection
-  c. Cleanup SSH Tunnel
-  i. Configuration
-  0. Exit
+主菜单:
+  1. 系统状态检查
+  2. 建立 SSH 隧道
+  3. 打开 Web UI
+  4. 打开 Code Server
+  5. 连接 Termux 终端
+  6. 桌面端与手机OpenClaw通讯指导
+  7. 恢复 ADB 连接
+  c. 清理 SSH 隧道
+  i. 自定义配置
+  0. 退出
 ```
 
-## Configuration Guide
+## 配置文件说明
 
-### Configuration (i Menu)
+### 自定义配置 (i 菜单)
 
-| Item | Description | How to Get |
-|------|-------------|------------|
-| User Name | Your nickname | Enter directly |
-| Phone Agent | Phone AI name | Enter directly |
-| Desktop Agent | Desktop AI name | Enter directly |
-| Phone IP | Phone's IP on current network | Run `ifconfig` or `hostname -I` on phone |
-| Gateway Token | Web UI access token | Run `cat ~/.openclaw/openclaw.json \| grep token` on phone |
-| Code Server Password | Code editor password | Run `cat ~/.config/code-server/config.yaml` on phone |
+| 配置项 | 说明 | 查询方法 |
+|--------|------|----------|
+| 用户昵称 | 你的称呼 | 直接输入 |
+| 手机Agent昵称 | 手机端 AI 名称 | 直接输入 |
+| 桌面端Agent昵称 | 桌面端 AI 名称 | 直接输入 |
+| 手机IP | 手机在当前网络的 IP | 手机执行 `ifconfig` 或 `hostname -I` |
+| Gateway Token | Web UI 访问令牌 | 手机执行 `cat ~/.openclaw/openclaw.json \| grep token` |
+| Code Server密码 | 代码编辑器密码 | 手机执行 `cat ~/.config/code-server/config.yaml` |
 
-### SSH/Port Config (i → 7)
+### SSH/端口配置 (i → 7)
 
-⚠️ Recommended to keep defaults
+⚠️ 建议维持默认配置
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| SSH Port | 8022 | Termux SSH service port |
-| SSH User | u0_aXXX | Run `whoami` on phone |
-| Forward Ports | 18789,18791,18792,8080 | Ports forwarded via SSH tunnel |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| SSH端口 | 8022 | Termux SSH 服务端口 |
+| SSH用户名 | u0_aXXX | 在手机执行 `whoami` 查询 |
+| 转发端口 | 18789,18791,18792,8080 | SSH 隧道转发的端口 |
 
-## Core Files
+## 核心文件
 
-| File | Description |
-|------|-------------|
-| `phone_cli.py` | Interactive CLI main program |
-| `phone_manager.py` | Command-line management tool |
-| `phone_config.json` | Configuration file |
-| `phonectl.sh` | Phone control script |
-| `phonectl_v2` | Enhanced phone control script |
-| `msgbus` | Bidirectional message bus script |
-| `cdp_agent.py` | Chrome DevTools Protocol agent |
-| `browser_agent.py` | Browser automation example |
+| 文件 | 说明 |
+|------|------|
+| `phone_cli.py` | 交互式 CLI 主程序 |
+| `phone_manager.py` | 命令行管理工具 |
+| `phone_config.json` | 配置文件 |
+| `phonectl.sh` | 手机端控制脚本 |
+| `phonectl_v2` | 增强版手机控制脚本 |
+| `msgbus` | 双向消息总线脚本 |
+| `cdp_agent.py` | Chrome DevTools Protocol 代理 |
+| `browser_agent.py` | 浏览器自动化示例 |
 
-## Phone Setup
+## 手机端准备
 
-### 1. Install Termux
+### 1. 安装 Termux
 
-Install Termux from F-Droid: https://f-droid.org/packages/com.termux/
+从 F-Droid 安装 Termux：https://f-droid.org/packages/com.termux/
 
-### 2. Initialize Environment
+### 2. 初始化环境
 
 ```bash
 pkg update && pkg upgrade
 pkg install -y git python nodejs openssh
 ```
 
-### 3. Configure SSH
+### 3. 配置 SSH
 
 ```bash
-# Generate SSH key
+# 生成 SSH 密钥
 ssh-keygen -t rsa -f ~/.ssh/id_rsa -N ""
 
-# Start SSH service
+# 启动 SSH 服务
 sshd
 ```
 
-### 4. Install OpenClaw
+### 4. 安装 OpenClaw
 
 ```bash
 npm install -g openclaw
 openclaw onboard
 ```
 
-### 5. Deploy Control Scripts
+### 5. 部署控制脚本
 
-Upload `phonectl.sh` and `msgbus` to phone:
+将 `phonectl.sh` 和 `msgbus` 上传到手机：
 
 ```bash
-scp -P 8022 phonectl.sh u0_aXXX@phoneIP:~/phonectl
+scp -P 8022 phonectl.sh u0_aXXX@手机IP:~/phonectl
 scp -P 8022 msgbus u0_aXXX@~/msgbus
-ssh -p 8022 u0_aXXX@phoneIP "chmod +x ~/phonectl ~/msgbus"
+ssh -p 8022 u0_aXXX@手机IP "chmod +x ~/phonectl ~/msgbus"
 ```
 
-## Communication with Phone
+## 与手机通讯
 
-### Method 1: SSH Command
+### 方式一：SSH 执行命令
 
 ```bash
-ssh -p 8022 u0_aXXX@phoneIP "<command>"
+ssh -p 8022 u0_aXXX@手机IP "<命令>"
 ```
 
-### Method 2: msgbus Message Bus
+### 方式二：msgbus 消息总线
 
 ```bash
-# Send message to phone
-ssh -p 8022 u0_aXXX@phoneIP "~/msgbus send tuanzhang 'message'"
+# 发送消息到手机
+ssh -p 8022 u0_aXXX@手机IP "~/msgbus send tuanzhang '消息内容'"
 
-# Receive phone reply
-ssh -p 8022 u0_aXXX@phoneIP "~/msgbus recv tuanzhang"
+# 接收手机回复
+ssh -p 8022 u0_aXXX@手机IP "~/msgbus recv tuanzhang"
 ```
 
-### Method 3: OpenClaw CLI
+### 方式三：OpenClaw CLI
 
 ```bash
-ssh -p 8022 u0_aXXX@phoneIP "openclaw agent --agent main -m 'message'"
+ssh -p 8022 u0_aXXX@手机IP "openclaw agent --agent main -m '消息内容'"
 ```
 
-## Troubleshooting
+## 常见问题
 
-### 1. SSH Connection Timeout
+### 1. SSH 连接超时
 
-- Check if phone and PC are on same WiFi
-- Verify phone IP is correct
-- Check if Termux sshd service is running
+- 检查手机和电脑是否在同一 WiFi
+- 确认手机 IP 是否正确
+- 检查 Termux 的 sshd 服务是否运行
 
-### 2. Web UI Shows "origin not allowed"
+### 2. Web UI 显示 "origin not allowed"
 
-Run CLI, select `i → 9` to fix, or manually run:
+运行 CLI，选择 `i → 9` 修复，或手动执行：
 
 ```bash
-ssh -p 8022 u0_aXXX@phoneIP "openclaw gateway restart"
+ssh -p 8022 u0_aXXX@手机IP "openclaw gateway restart"
 ```
 
-### 3. ADB Connection Lost
+### 3. ADB 连接断开
 
-After phone restart, reconnect:
+手机重启后需要重新连接：
 
 ```bash
-# PC side (requires USB connection)
+# 电脑端（需要 USB 连接）
 adb tcpip 5555
 
-# Phone Termux
+# 手机 Termux
 adb connect localhost:5555
 ```
 
-## Project Structure
+## 项目结构
 
 ```
-android-openclaw-helper/
-├── phone_cli.py          # Interactive CLI
-├── phone_manager.py      # Command-line tool
-├── phone_config.json    # Configuration file
-├── phonectl.sh         # Phone control script
-├── phonectl_v2         # Enhanced control script
-├── msgbus              # Message bus script
-├── cdp_agent.py        # CDP agent
-├── browser_agent.py    # Browser automation
-├── platform-tools/     # Android ADB tools
-├── *.bat              # Windows shortcut scripts
-├── SETUP_GUIDE.md     # Complete setup guide
-├── phonectl_guide.md  # phonectl usage guide
-└── ERROR_GUIDE.md    # Troubleshooting guide
+openclaw-android-helper/
+├── phone_cli.py          # 交互式 CLI
+├── phone_manager.py      # 命令行工具
+├── phone_config.json    # 配置文件
+├── phonectl.sh          # 手机控制脚本
+├── phonectl_v2         # 增强版控制脚本
+├── msgbus              # 消息总线脚本
+├── cdp_agent.py        # CDP 代理
+├── browser_agent.py    # 浏览器自动化
+├── platform-tools/     # Android ADB 工具
+├── *.bat              # Windows 快捷脚本
+├── SETUP_GUIDE.md     # 完整搭建教程
+├── phonectl_guide.md  # phonectl 使用指南
+└── ERROR_GUIDE.md    # 错误排查指南
 ```
 
-## Support
+## 技术支持
 
-- See `SETUP_GUIDE.md` for complete setup instructions
-- See `ERROR_GUIDE.md` for troubleshooting
-- See `phonectl_guide.md` for phone control commands
+- 查看 `SETUP_GUIDE.md` 了解完整搭建流程
+- 查看 `ERROR_GUIDE.md` 排查常见问题
+- 查看 `phonectl_guide.md` 学习手机控制命令
 
 ## License
 
