@@ -247,17 +247,17 @@ adb connect localhost:5555
 android-openclaw-helper/
 ├── phone_cli.py          # Interactive CLI
 ├── phone_manager.py      # Command-line tool
-├── phone_config.json     # Configuration file
-├── phonectl.sh          # Phone control script
-├── phonectl_v2          # Enhanced control script
-├── msgbus               # Message bus script
-├── cdp_agent.py         # CDP agent
-├── browser_agent.py     # Browser automation
-├── platform-tools/      # Android ADB tools
-├── *.bat                # Windows shortcut scripts
-├── SETUP_GUIDE.md       # Complete setup guide
-├── phonectl_guide.md    # phonectl usage guide
-└── ERROR_GUIDE.md      # Troubleshooting guide
+├── phone_config.json    # Configuration file
+├── phonectl.sh         # Phone control script
+├── phonectl_v2         # Enhanced control script
+├── msgbus              # Message bus script
+├── cdp_agent.py        # CDP agent
+├── browser_agent.py    # Browser automation
+├── platform-tools/     # Android ADB tools
+├── *.bat              # Windows shortcut scripts
+├── SETUP_GUIDE.md     # Complete setup guide
+├── phonectl_guide.md  # phonectl usage guide
+└── ERROR_GUIDE.md    # Troubleshooting guide
 ```
 
 ## Support
