@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 手机远程控制系统 - 交互式 CLI
 整合所有功能的统一管理界面
@@ -9,6 +10,11 @@ import sys
 import os
 import webbrowser
 from pathlib import Path
+
+if sys.platform == 'win32':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 class PhoneCLI:
     def __init__(self):
@@ -60,12 +66,64 @@ class PhoneCLI:
                        self.config['networks'].get('default', {}).get('phone_ip', '未配置'))
         return phone_ip
 
+    def find_adb(self):
+        """自动查找 ADB 路径"""
+        import os
+        
+        adb_candidates = []
+        
+        custom_path = self.config.get('adb', {}).get('custom_path', '')
+        if custom_path:
+            adb_candidates.insert(0, custom_path)
+        
+        if os.name == 'nt':
+            adb_candidates.extend([
+                'adb.exe',
+                os.path.expanduser('~') + '\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe',
+                os.path.expanduser('~') + '\\Android\\Sdk\\platform-tools\\adb.exe',
+                'C:\\Android\\Sdk\\platform-tools\\adb.exe',
+                'D:\\Android\\Sdk\\platform-tools\\adb.exe',
+                'C:\\Program Files\\Android\\Sdk\\platform-tools\\adb.exe',
+                os.environ.get('ANDROID_HOME', '') + '\\platform-tools\\adb.exe' if os.environ.get('ANDROID_HOME') else None,
+                os.environ.get('ANDROID_SDK_ROOT', '') + '\\platform-tools\\adb.exe' if os.environ.get('ANDROID_SDK_ROOT') else None,
+            ])
+            adb_candidates = [p for p in adb_candidates if p]
+        else:
+            adb_candidates.extend(['adb', '/usr/bin/adb', '/usr/local/bin/adb'])
+        
+        for adb in adb_candidates:
+            try:
+                result = subprocess.run(f'"{adb}" version', shell=True, capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    print(f"  ✓ 找到 ADB: {adb}")
+                    return adb
+            except:
+                pass
+        
+        return None
+
+    def check_adb_devices(self, adb_path):
+        """检查 ADB 设备连接状态"""
+        try:
+            result = subprocess.run(f'"{adb_path}" devices', shell=True, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                devices = [l for l in lines[1:] if l and '\tdevice' in l]
+                return True, devices
+        except Exception as e:
+            return False, []
+        return False, []
+
     def ssh_cmd(self, cmd, timeout=10):
         """执行 SSH 命令"""
         ssh_user = self.config['ssh_config']['user']
         ssh_port = self.config['ssh_config']['port']
         full_cmd = f'ssh -p {ssh_port} -o StrictHostKeyChecking=no -o ConnectTimeout={timeout} {ssh_user}@{self.phone_ip} "{cmd}"'
-        return subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
+        try:
+            result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+            return result
+        except Exception:
+            return subprocess.CompletedProcess(args='', returncode=1, stdout='', stderr='')
 
     def check_connection(self):
         """检查手机连接"""
@@ -211,15 +269,44 @@ class PhoneCLI:
 
     def restore_adb(self):
         """恢复 ADB TCP 连接"""
-        print("\n[步骤 1/2] 启用 ADB TCP（需要 USB 连接）")
-        result = subprocess.run('/tmp/platform-tools/adb.exe tcpip 5555', shell=True)
+        print("\n[步骤 1/3] 查找 ADB...")
+        
+        adb_path = self.find_adb()
+        if not adb_path:
+            print("  ✗ 未找到 ADB，请安装 Android SDK 或配置 ADB 路径")
+            print("\n请进行以下操作之一:")
+            print("  1. 安装 Android Studio 并配置 SDK")
+            print("  2. 下载 ADB 工具: https://developer.android.com/studio/releases/platform-tools")
+            print("  3. 在配置菜单 (i → 7 → 4) 中设置 ADB 自定义路径")
+            return False, "ADB 未找到"
+        
+        print(f"\n[步骤 2/3] 启用 ADB TCP（需要 USB 连接）...")
+        
+        result = subprocess.run(f'"{adb_path}" tcpip 5555', shell=True, capture_output=True, text=True)
+        
         if result.returncode != 0:
-            return False, "ADB TCP 启用失败，请确保手机已通过 USB 连接"
-
-        print("[步骤 2/2] 连接到手机 ADB")
+            print(f"  ✗ ADB TCP 启用失败")
+            print(f"  错误: {result.stderr}")
+            print("\n请确保:")
+            print("  1. 手机已通过 USB 连接到电脑")
+            print("  2. 手机已开启 USB 调试模式")
+            print("  3. 电脑上已授权该手机调试")
+            return False, "ADB TCP 启用失败，请检查 USB 连接"
+        
+        print("  ✓ ADB TCP 已启用")
+        
+        print("\n[步骤 3/3] 连接到手机 ADB...")
+        
+        has_device, devices = self.check_adb_devices(adb_path)
+        if has_device:
+            print(f"  ✓ 检测到 {len(devices)} 个设备已通过 USB 连接")
+        
         result = self.ssh_cmd('adb connect localhost:5555')
+        
         if result.returncode == 0:
             return True, "ADB 连接成功"
+        
+        print(f"  ✗ ADB 连接失败: {result.stderr}")
         return False, "ADB 连接失败"
 
     def clear_screen(self):
@@ -237,6 +324,26 @@ class PhoneCLI:
         print(f"  当前网络: {self.wifi}")
         print(f"  手机 IP: {self.phone_ip}")
         print("=" * 60)
+        self.print_config_warning()
+
+    def print_config_warning(self):
+        """检查并显示配置警告"""
+        warnings = []
+        
+        ip_invalid = not self.phone_ip or self.phone_ip in ['未配置', '手机IP地址', '默认手机IP']
+        if ip_invalid:
+            warnings.append("手机IP未配置")
+        
+        ssh_user = self.config.get('ssh_config', {}).get('user', '')
+        if not ssh_user or ssh_user == 'u0_aXXX':
+            warnings.append("SSH用户名未配置")
+        
+        if warnings:
+            print("\n⚠️  配置未完成，请先进行配置:")
+            for w in warnings:
+                print(f"   - {w}")
+            print("   请进入【i.自定义配置】设置必要参数")
+            print("-" * 60)
 
     def print_menu(self):
         """打印主菜单"""
@@ -246,7 +353,7 @@ class PhoneCLI:
         print("  3. 打开 Web UI")
         print("  4. 打开 Code Server")
         print("  5. 连接 Termux 终端")
-        print("  6. 桌面端Agent↔手机OpenClaw通讯指导")
+        print("  6. 桌面端与手机OpenClaw通讯指导")
         print("  7. 恢复 ADB 连接")
         print("  c. 清理 SSH 隧道")
         print("  i. 自定义配置")
@@ -313,7 +420,7 @@ class PhoneCLI:
             import json
             
             result = self.ssh_cmd("cat ~/.openclaw/openclaw.json 2>/dev/null")
-            if result.returncode != 0 or not result.stdout.strip():
+            if result.returncode != 0 or not result.stdout or not result.stdout.strip():
                 print("  ⚠ 无法读取配置文件，跳过自动修复")
                 return False
             
@@ -430,10 +537,34 @@ class PhoneCLI:
                 print("✗ 隧道建立失败，无法打开 Code Server")
                 return
 
-        url = f"http://127.0.0.1:{self.config['services']['code_server']['port']}"
-        password = self.config['services']['code_server']['password']
-        print(f"正在打开: {url}")
-        print(f"登录密码: {password}")
+        print("正在诊断 Code Server 服务状态...")
+        
+        code_port = self.config['services']['code_server']['port']
+        
+        import urllib.request
+        try:
+            urllib.request.urlopen(f'http://127.0.0.1:{code_port}/', timeout=3)
+            print("  ✓ Code Server 服务正常运行")
+        except Exception as e:
+            print("  ✗ Code Server 服务可能未运行")
+            print("\n请在手机 Termux 中执行以下命令启动 Code Server:")
+            print(f"  code-server --port {code_port} --auth none")
+            print("\n或检查服务是否在后台运行:")
+            print("  ps aux | grep code-server")
+            
+            print("\n是否尝试在手机端启动 Code Server? (y/n): ", end="")
+            choice = input().strip().lower()
+            if choice == 'y':
+                print("正在尝试启动 Code Server...")
+                start_result = self.ssh_cmd(f'nohup code-server --port {code_port} --auth none > /dev/null 2>&1 &')
+                if start_result.returncode == 0:
+                    import time
+                    time.sleep(3)
+                    print("  ✓ 已发送启动命令，请稍候刷新页面")
+
+        url = f"http://127.0.0.1:{code_port}"
+        print(f"\n正在打开: {url}")
+        print("登录: 无需密码 (--auth none)")
         webbrowser.open(url)
         print("✓ 已在浏览器中打开")
 
@@ -450,7 +581,7 @@ class PhoneCLI:
     def menu_agent_guide(self):
         """菜单：桌面端Agent与手机OpenClaw通讯指导"""
         self.print_header()
-        print("\n[功能] 桌面端Agent ↔ 手机OpenClaw 通讯指导")
+        print("\n[功能] 桌面端Agent 与 手机OpenClaw 通讯指导")
         print("=" * 60)
         print("\n【请将以下内容复制给桌面端AI（如Claude Code、OpenCode等）】\n")
 
@@ -548,17 +679,16 @@ class PhoneCLI:
             code_pwd_display = code_pwd[:8] + '...' if len(code_pwd) > 8 else code_pwd
             print(f"  6. Code Server密码: {code_pwd_display}")
             
-            print("\n【可选配置】（建议维持默认，如需修改请进】:")
-            print(f"  7. SSH/端口配置")
-            print(f"  8. 高级服务配置")
+            print("\n【可选配置】:")
+            print(f"  7. SSH/端口/ADB配置")
+            
             print(f"\n【工具】:")
-            print(f"  9. 修复 WebUI 访问权限 (origin not allowed)")
-            print(f"  a. 配置文件: {self.config_path}")
+            print(f"  a. 打开配置文件 (记事本)")
             print("\n" + "=" * 55)
             print("  0. 返回主菜单")
             print("-" * 55)
 
-            choice = input("\n请选择 (0-9/a): ").strip().lower()
+            choice = input("\n请选择 (0-7/a): ").strip().lower()
 
             if choice == '0':
                 break
@@ -576,14 +706,15 @@ class PhoneCLI:
                 self.config_code_server_password()
             elif choice == '7':
                 self.menu_ssh_config()
-            elif choice == '8':
-                self.menu_services_config()
-            elif choice == '9':
-                self.fix_webui_access()
             elif choice == 'a':
-                self.show_config_file()
+                self.open_config_notepad()
             else:
                 print("\n无效选择")
+
+    def open_config_notepad(self):
+        """用记事本打开配置文件"""
+        import subprocess
+        subprocess.run(['notepad.exe', str(self.config_path)])
 
     def config_gateway_token(self):
         """配置Gateway Token"""
@@ -680,10 +811,10 @@ class PhoneCLI:
             print("  进入后执行: openclaw gateway restart")
 
     def menu_ssh_config(self):
-        """SSH配置子菜单"""
+        """SSH/ADB配置子菜单"""
         while True:
             self.print_header()
-            print("\n[SSH/端口配置]")
+            print("\n[SSH/端口/ADB配置]")
             print("=" * 50)
             print("\n⚠  建议维持默认配置，除非清楚了解每个参数的作用")
             print("-" * 50)
@@ -691,16 +822,18 @@ class PhoneCLI:
             ssh_port = self.config.get('ssh_config', {}).get('port', 8022)
             ssh_user = self.config.get('ssh_config', {}).get('user', 'u0_aXXX')
             ports = self.config.get('ssh_config', {}).get('ports_to_forward', [])
+            adb_path = self.config.get('adb', {}).get('custom_path', '')
             
             print(f"\n  1. SSH端口: {ssh_port} (默认8022)")
             print(f"  2. SSH用户名: {ssh_user} (在手机执行 'whoami' 查询)")
             print(f"  3. 转发端口: {ports}")
+            print(f"  4. ADB自定义路径: {adb_path if adb_path else '(自动检测)'}")
             
             print("\n" + "=" * 50)
             print("  0. 返回")
             print("-" * 50)
             
-            choice = input("\n请选择 (0-3): ").strip()
+            choice = input("\n请选择 (0-4): ").strip()
             
             if choice == '0':
                 break
@@ -710,6 +843,8 @@ class PhoneCLI:
                 self.config_ssh_param('user', 'SSH用户名', '在手机执行: whoami')
             elif choice == '3':
                 self.config_forward_ports()
+            elif choice == '4':
+                self.config_adb_path()
             else:
                 print("\n无效选择")
 
@@ -784,6 +919,36 @@ class PhoneCLI:
                 print("\n✗ 保存失败")
         except:
             print("\n✗ 格式错误，请输入数字用逗号分隔")
+
+    def config_adb_path(self):
+        """配置 ADB 自定义路径"""
+        self.print_header()
+        print("\n[配置] ADB 自定义路径")
+        print("=" * 50)
+        
+        current = self.config.get('adb', {}).get('custom_path', '')
+        print(f"当前值: {current if current else '(自动检测)'}")
+        
+        print("\n说明:")
+        print("-" * 50)
+        print("留空使用自动检测，或输入 ADB 完整路径")
+        print("例如: C:\\Android\\Sdk\\platform-tools\\adb.exe")
+        print("-" * 50)
+        
+        new_value = input("\n请输入 ADB 路径 (留空使用自动检测): ").strip()
+        
+        if 'adb' not in self.config:
+            self.config['adb'] = {}
+        
+        self.config['adb']['custom_path'] = new_value
+        
+        if self.save_config():
+            if new_value:
+                print(f"\n✓ ADB 路径已设置为: {new_value}")
+            else:
+                print("\n✓ 将使用自动检测")
+        else:
+            print("\n✗ 保存失败")
 
     def menu_services_config(self):
         """服务配置子菜单"""
