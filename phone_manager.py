@@ -34,18 +34,41 @@ def get_phone_ip(config, wifi):
     return phone_ip
 
 def ssh_cmd(config, phone_ip, cmd):
+    import os
     ssh_user = config['ssh_config']['user']
     ssh_port = config['ssh_config']['port']
-    full_cmd = f'ssh -p {ssh_port} -o StrictHostKeyChecking=no {ssh_user}@{phone_ip} "{cmd}"'
+    
+    private_key = config['ssh_config'].get('private_key', '')
+    if private_key:
+        private_key = os.path.expandvars(private_key)
+        if os.path.exists(private_key):
+            key_arg = f'-i "{private_key}"'
+        else:
+            key_arg = ''
+    else:
+        key_arg = ''
+    
+    full_cmd = f'ssh {key_arg} -p {ssh_port} -o StrictHostKeyChecking=no {ssh_user}@{phone_ip} "{cmd}"'
     return subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
 
 def connect_tunnel(config, phone_ip):
+    import os
     ssh_user = config['ssh_config']['user']
     ssh_port = config['ssh_config']['port']
     ports = config['ssh_config']['ports_to_forward']
+    
+    private_key = config['ssh_config'].get('private_key', '')
+    if private_key:
+        private_key = os.path.expandvars(private_key)
+        if os.path.exists(private_key):
+            key_arg = f'-i "{private_key}"'
+        else:
+            key_arg = ''
+    else:
+        key_arg = ''
 
     port_args = ' '.join([f'-L {p}:127.0.0.1:{p}' for p in ports])
-    cmd = f'ssh -N -f {port_args} -p {ssh_port} -o StrictHostKeyChecking=no {ssh_user}@{phone_ip}'
+    cmd = f'ssh {key_arg} -N -f {port_args} -p {ssh_port} -o StrictHostKeyChecking=no {ssh_user}@{phone_ip}'
 
     result = subprocess.run(cmd, shell=True)
     return result.returncode == 0
