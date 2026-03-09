@@ -1,8 +1,8 @@
-# AI 手机远程控制系统 - 完整指南
+# OpenClaw Android 小助手 - 完整指南
 
 ## 系统概述
 
-这是一个 AI 手机远程控制系统，让电脑端 AI（Claude Code）能够通过 SSH + ADB 远程操控 Android 手机上的 OpenClaw Agent。
+这是一个 OpenClaw Android 小助手，让电脑端 AI（Claude Code）能够通过 SSH + ADB 远程操控 Android 手机上的 OpenClaw Agent。
 
 ### 架构设计
 

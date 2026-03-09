@@ -7,22 +7,23 @@
   "networks": {
     "你的WiFi名称": {
       "name": "网络名称",
-      "phone_ip": "手机IP地址"
+      "phone_ip": "192.168.x.x"
     },
     "default": {
       "name": "默认网络",
-      "phone_ip": "默认手机IP"
+      "phone_ip": "192.168.x.x"
     }
   },
   "ssh_config": {
     "port": 8022,
-    "user": "在手机执行 whoami 查询",
+    "user": "u0_aXXX",
     "ports_to_forward": [
       18789,
       18791,
       18792,
       8080
-    ]
+    ],
+    "private_key": "%USERPROFILE%\\.ssh\\id_rsa"
   },
   "services": {
     "openclaw": {
