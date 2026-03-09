@@ -101,6 +101,7 @@ python phone_cli.py
 
 ```
 Main Menu:
+  0. Initialization Settings (First-time Use)
   1. System Status
   2. Establish SSH Tunnel
   3. Open Web UI
@@ -110,7 +111,7 @@ Main Menu:
   7. Restore ADB Connection
   c. Cleanup SSH Tunnel
   i. Configuration
-  0. Exit
+  q. Exit
 ```
 
 ## Configuration Guide

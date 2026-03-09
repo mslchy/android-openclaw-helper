@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-手机远程控制系统 - 交互式 CLI
+OpenClaw Android 小助手
 整合所有功能的统一管理界面
 """
 import json
+import re
 import subprocess
 import sys
 import os
@@ -59,12 +60,32 @@ class PhoneCLI:
         return '未知'
 
     def get_phone_ip(self):
-        """获取手机 IP"""
+        """获取手机 IP - 基于网段自动匹配"""
+        placeholders = ['手机IP地址', '默认手机IP']
+        
         phone_ip = self.config['networks'].get(self.wifi, {}).get('phone_ip')
-        if not phone_ip:
-            phone_ip = self.config.get('default_network', {}).get('phone_ip',
-                       self.config['networks'].get('default', {}).get('phone_ip', '未配置'))
-        return phone_ip
+        if phone_ip and phone_ip not in placeholders:
+            return phone_ip
+        
+        try:
+            result = subprocess.run('ipconfig', shell=True, capture_output=True, text=True, timeout=5)
+            local_nets = re.findall(r'(?:192\.168\.(\d+)\.(\d+)|10\.(\d+)\.(\d+)\.(\d+)|172\.(1[6-9]|2\d|3[01])\.(\d+)\.(\d+))', result.stdout)
+            
+            for network_name, network_config in self.config['networks'].items():
+                config_ip = network_config.get('phone_ip', '')
+                if not config_ip or config_ip in placeholders:
+                    continue
+                
+                for net_match in local_nets:
+                    net_parts = [p for p in net_match if p]
+                    if len(net_parts) >= 2:
+                        local_net = '.'.join(net_parts[:-1])
+                        if local_net in config_ip:
+                            return config_ip
+        except:
+            pass
+        
+        return self.config['networks'].get('default', {}).get('phone_ip', '未配置')
 
     def find_adb(self):
         """自动查找 ADB 路径"""
@@ -116,9 +137,19 @@ class PhoneCLI:
 
     def ssh_cmd(self, cmd, timeout=10):
         """执行 SSH 命令"""
+        import os
         ssh_user = self.config['ssh_config']['user']
         ssh_port = self.config['ssh_config']['port']
-        full_cmd = f'ssh -p {ssh_port} -o StrictHostKeyChecking=no -o ConnectTimeout={timeout} {ssh_user}@{self.phone_ip} "{cmd}"'
+        private_key = self.config['ssh_config'].get('private_key', '')
+        if private_key:
+            private_key = os.path.expandvars(private_key)
+            if os.path.exists(private_key):
+                key_arg = f'-i "{private_key}"'
+            else:
+                key_arg = ''
+        else:
+            key_arg = ''
+        full_cmd = f'ssh {key_arg} -p {ssh_port} -o StrictHostKeyChecking=no -o ConnectTimeout={timeout} {ssh_user}@{self.phone_ip} "{cmd}"'
         try:
             result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
             return result
@@ -131,12 +162,18 @@ class PhoneCLI:
         return result.returncode == 0
 
     def check_tunnel(self):
-        """检查隧道状态"""
+        """检查隧道状态 - 通过检测端口是否被监听"""
+        import subprocess
         try:
-            import urllib.request
-            health_port = self.config['services']['openclaw']['health_port']
-            urllib.request.urlopen(f'http://127.0.0.1:{health_port}/', timeout=2)
-            return True
+            result = subprocess.run(
+                'netstat -ano | findstr "LISTENING"',
+                shell=True, capture_output=True, text=True
+            )
+            ports = self.config['ssh_config']['ports_to_forward']
+            for port in ports:
+                if f'127.0.0.1:{port}' in result.stdout:
+                    return True
+            return False
         except:
             return False
 
@@ -227,11 +264,23 @@ class PhoneCLI:
 
     def connect_tunnel(self):
         """建立 SSH 隧道"""
+        import os
         ssh_user = self.config['ssh_config']['user']
         ssh_port = self.config['ssh_config']['port']
         ports = self.config['ssh_config']['ports_to_forward']
         port_args = ' '.join([f'-L {p}:127.0.0.1:{p}' for p in ports])
-        cmd = f'ssh -N -f {port_args} -p {ssh_port} -o StrictHostKeyChecking=no -o ServerAliveInterval=60 {ssh_user}@{self.phone_ip}'
+        
+        private_key = self.config['ssh_config'].get('private_key', '')
+        if private_key:
+            private_key = os.path.expandvars(private_key)
+            if os.path.exists(private_key):
+                key_arg = f'-i "{private_key}"'
+            else:
+                key_arg = ''
+        else:
+            key_arg = ''
+        
+        cmd = f'ssh {key_arg} -N -f {port_args} -p {ssh_port} -o StrictHostKeyChecking=no -o ServerAliveInterval=60 {ssh_user}@{self.phone_ip}'
         
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
@@ -250,9 +299,21 @@ class PhoneCLI:
 
     def open_termux(self):
         """打开 Termux SSH 连接"""
+        import os
         ssh_user = self.config['ssh_config']['user']
         ssh_port = self.config['ssh_config']['port']
-        cmd = f'ssh -p {ssh_port} -o StrictHostKeyChecking=no -o ServerAliveInterval=30 {ssh_user}@{self.phone_ip}'
+        
+        private_key = self.config['ssh_config'].get('private_key', '')
+        if private_key:
+            private_key = os.path.expandvars(private_key)
+            if os.path.exists(private_key):
+                key_arg = f'-i "{private_key}"'
+            else:
+                key_arg = ''
+        else:
+            key_arg = ''
+        
+        cmd = f'ssh {key_arg} -p {ssh_port} -o StrictHostKeyChecking=no -o ServerAliveInterval=30 {ssh_user}@{self.phone_ip}'
         subprocess.run(cmd, shell=True)
 
     def send_msg(self, msg):
@@ -317,11 +378,12 @@ class PhoneCLI:
         """打印标题"""
         self.clear_screen()
         print("=" * 60)
-        print("        手机远程控制系统 - 交互式管理界面")
+        print("        OpenClaw Android 小助手")
         print("=" * 60)
         print(f"  用户: {self.user_name}")
         print(f"  手机Agent: {self.phone_agent_name}")
-        print(f"  当前网络: {self.wifi}")
+        wifi_display = "本地网络" if self.wifi == "未知" else self.wifi
+        print(f"  当前网络: {wifi_display}")
         print(f"  手机 IP: {self.phone_ip}")
         print("=" * 60)
         self.print_config_warning()
@@ -348,6 +410,7 @@ class PhoneCLI:
     def print_menu(self):
         """打印主菜单"""
         print("\n主菜单:")
+        print("  0. 初始化设置（首次使用）")
         print("  1. 系统状态检查")
         print("  2. 建立 SSH 隧道")
         print("  3. 打开 Web UI")
@@ -357,8 +420,202 @@ class PhoneCLI:
         print("  7. 恢复 ADB 连接")
         print("  c. 清理 SSH 隧道")
         print("  i. 自定义配置")
-        print("  0. 退出")
+        print("  q. 退出")
         print("-" * 60)
+
+    def menu_init_all(self):
+        """菜单：初始化设置（二级菜单）"""
+        while True:
+            self.print_header()
+            print("\n[初始化设置]")
+            print("=" * 55)
+            print("\n请选择要配置的项目:")
+            print("  1. 配置手机IP")
+            print("  2. 配置SSH密钥并添加公钥到手机")
+            print("  3. 配置Gateway Token")
+            print("  4. 配置Code Server密码")
+            print("  5. 全部配置（按顺序引导）")
+            print("\n" + "=" * 55)
+            print("  0. 返回主菜单")
+            print("-" * 55)
+            
+            choice = input("\n请选择 (0-5): ").strip()
+            
+            if choice == '0':
+                break
+            elif choice == '1':
+                self.init_config_phone_ip()
+            elif choice == '2':
+                self.init_config_ssh()
+            elif choice == '3':
+                self.init_config_token()
+            elif choice == '4':
+                self.init_config_code_password()
+            elif choice == '5':
+                self.init_all_steps()
+            else:
+                print("\n无效选择")
+
+    def init_config_phone_ip(self):
+        """初始化：配置手机IP"""
+        self.print_header()
+        print("\n[配置] 手机IP")
+        print("=" * 50)
+        
+        wifi_display = "本地网络" if self.wifi == "未知" else self.wifi
+        print(f"\n当前网络: {wifi_display}")
+        print(f"当前手机IP: {self.phone_ip}")
+        
+        if self.phone_ip in ['未配置', '手机IP地址', '默认手机IP']:
+            print("\n查询手机IP方法:")
+            print("  在手机Termux执行: hostname -I")
+            new_ip = input("\n请输入手机IP地址: ").strip()
+            if new_ip:
+                parts = new_ip.split('.')
+                if len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts):
+                    self.set_custom_ip(new_ip)
+                    print(f"✓ 已设置手机IP: {new_ip}")
+                    self.update_network_info()
+                else:
+                    print("✗ IP格式无效")
+        else:
+            print("\n✓ 手机IP已配置")
+            change = input("是否修改? (y/n): ").strip().lower()
+            if change == 'y':
+                new_ip = input("请输入手机IP地址: ").strip()
+                if new_ip:
+                    parts = new_ip.split('.')
+                    if len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts):
+                        self.set_custom_ip(new_ip)
+                        print(f"✓ 已设置手机IP: {new_ip}")
+                        self.update_network_info()
+
+    def init_config_ssh(self):
+        """初始化：配置SSH密钥"""
+        import os
+        self.print_header()
+        print("\n[配置] SSH密钥")
+        print("=" * 50)
+        
+        user_home = os.path.expandvars('%USERPROFILE%')
+        ssh_dir = os.path.join(user_home, '.ssh')
+        private_key = os.path.join(ssh_dir, 'id_rsa')
+        public_key = os.path.join(ssh_dir, 'id_rsa.pub')
+        
+        if os.path.exists(private_key):
+            print("\n✓ SSH密钥已存在")
+        else:
+            print("\n正在生成SSH密钥...")
+            os.makedirs(ssh_dir, exist_ok=True)
+            result = subprocess.run(
+                f'ssh-keygen -t rsa -f "{private_key}" -N "" -C "openclaw-android-helper"',
+                shell=True, capture_output=True, text=True
+            )
+            if os.path.exists(private_key):
+                print("✓ SSH密钥生成成功")
+            else:
+                print(f"✗ 密钥生成失败")
+                return
+        
+        try:
+            with open(public_key, 'r') as f:
+                pub_key = f.read().strip()
+        except:
+            print("✗ 无法读取公钥")
+            return
+        
+        print("\n请在手机Termux中执行以下命令:")
+        print("-" * 50)
+        print(f"echo '{pub_key}' >> ~/.ssh/authorized_keys")
+        print("-" * 50)
+        
+        input("\n添加完成后回车继续...")
+        
+        if self.check_connection():
+            print("\n✓ SSH连接成功！")
+        else:
+            print("\n✗ SSH连接失败，请检查:")
+            print("  1. 公钥是否正确添加")
+            print("  2. Termux的sshd是否运行")
+
+    def init_config_token(self):
+        """初始化：配置Gateway Token"""
+        self.print_header()
+        print("\n[配置] Gateway Token")
+        print("=" * 50)
+        
+        token = self.config.get('services', {}).get('openclaw', {}).get('token', '')
+        if '查询' in token or '手机' in token or token == '':
+            print("\n在手机Termux执行以下命令获取Token:")
+            print("  cat ~/.openclaw/openclaw.json | grep token")
+            new_token = input("\n请输入Gateway Token: ").strip()
+            if new_token:
+                if 'services' not in self.config:
+                    self.config['services'] = {}
+                if 'openclaw' not in self.config['services']:
+                    self.config['services']['openclaw'] = {}
+                self.config['services']['openclaw']['token'] = new_token
+                self.save_config()
+                print("✓ Token已保存")
+        else:
+            print(f"\n当前Token: {token[:16]}...")
+            change = input("是否修改? (y/n): ").strip().lower()
+            if change == 'y':
+                new_token = input("请输入Gateway Token: ").strip()
+                if new_token:
+                    self.config['services']['openclaw']['token'] = new_token
+                    self.save_config()
+                    print("✓ Token已保存")
+
+    def init_config_code_password(self):
+        """初始化：配置Code Server密码"""
+        self.print_header()
+        print("\n[配置] Code Server密码")
+        print("=" * 50)
+        
+        code_pwd = self.config.get('services', {}).get('code_server', {}).get('password', '')
+        if '查询' in code_pwd or '手机' in code_pwd or code_pwd == '':
+            print("\n在手机Termux执行以下命令获取密码:")
+            print("  cat ~/.config/code-server/config.yaml")
+            new_pwd = input("\n请输入Code Server密码: ").strip()
+            if new_pwd:
+                if 'services' not in self.config:
+                    self.config['services'] = {}
+                if 'code_server' not in self.config['services']:
+                    self.config['services']['code_server'] = {}
+                self.config['services']['code_server']['password'] = new_pwd
+                self.save_config()
+                print("✓ 密码已保存")
+        else:
+            print(f"\n当前密码: {code_pwd[:8]}...")
+            change = input("是否修改? (y/n): ").strip().lower()
+            if change == 'y':
+                new_pwd = input("请输入Code Server密码: ").strip()
+                if new_pwd:
+                    self.config['services']['code_server']['password'] = new_pwd
+                    self.save_config()
+                    print("✓ 密码已保存")
+
+    def init_all_steps(self):
+        """初始化：全部步骤"""
+        print("\n开始按顺序配置...\n")
+        self.init_config_phone_ip()
+        input("\n按回车继续下一步...")
+        
+        self.init_config_ssh()
+        input("\n按回车继续下一步...")
+        
+        self.init_config_token()
+        input("\n按回车继续下一步...")
+        
+        self.init_config_code_password()
+        
+        print("\n" + "=" * 50)
+        print("✓ 初始化完成！")
+        print("=" * 50)
+        print("\n后续操作:")
+        print("  - 选择 '2. 建立SSH隧道'")
+        print("  - 选择 '3. 打开Web UI'")
 
     def menu_status(self):
         """菜单：系统状态检查"""
@@ -672,11 +929,17 @@ class PhoneCLI:
             print(f"  4. 手机IP: {self.phone_ip} ({self.wifi})")
             
             token = self.config.get('services', {}).get('openclaw', {}).get('token', '')
-            token_display = token[:12] + '...' if len(token) > 12 else token
+            if '查询' in token or '手机' in token or '执行' in token:
+                token_display = '未配置'
+            else:
+                token_display = token[:12] + '...' if len(token) > 12 else token
             print(f"  5. Gateway Token: {token_display}")
             
             code_pwd = self.config.get('services', {}).get('code_server', {}).get('password', '')
-            code_pwd_display = code_pwd[:8] + '...' if len(code_pwd) > 8 else code_pwd
+            if '查询' in code_pwd or '手机' in code_pwd or '执行' in code_pwd:
+                code_pwd_display = '未配置'
+            else:
+                code_pwd_display = code_pwd[:8] + '...' if len(code_pwd) > 8 else code_pwd
             print(f"  6. Code Server密码: {code_pwd_display}")
             
             print("\n【可选配置】:")
@@ -723,7 +986,10 @@ class PhoneCLI:
         print("=" * 50)
         
         current = self.config.get('services', {}).get('openclaw', {}).get('token', '')
-        print(f"当前值: {current[:16]}..." if len(current) > 16 else f"当前值: {current}")
+        if '查询' in current or '手机' in current or '执行' in current:
+            print("当前值: 未配置")
+        else:
+            print(f"当前值: {current[:16]}..." if len(current) > 16 else f"当前值: {current}")
         
         print("\n查询方法:")
         print("-" * 50)
@@ -757,7 +1023,10 @@ class PhoneCLI:
         print("=" * 50)
         
         current = self.config.get('services', {}).get('code_server', {}).get('password', '')
-        print(f"当前值: {current[:8]}..." if len(current) > 8 else f"当前值: {current}")
+        if '查询' in current or '手机' in current or '执行' in current:
+            print("当前值: 未配置")
+        else:
+            print(f"当前值: {current[:8]}..." if len(current) > 8 else f"当前值: {current}")
         
         print("\n查询方法:")
         print("-" * 50)
@@ -819,27 +1088,42 @@ class PhoneCLI:
             print("\n⚠  建议维持默认配置，除非清楚了解每个参数的作用")
             print("-" * 50)
             
+            import os
             ssh_port = self.config.get('ssh_config', {}).get('port', 8022)
             ssh_user = self.config.get('ssh_config', {}).get('user', 'u0_aXXX')
             ports = self.config.get('ssh_config', {}).get('ports_to_forward', [])
             adb_path = self.config.get('adb', {}).get('custom_path', '')
+            private_key = self.config.get('ssh_config', {}).get('private_key', '')
+            private_key = os.path.expandvars(private_key) if private_key else ''
+            key_exists = os.path.exists(private_key) if private_key else False
             
             print(f"\n  1. SSH端口: {ssh_port} (默认8022)")
             print(f"  2. SSH用户名: {ssh_user} (在手机执行 'whoami' 查询)")
             print(f"  3. 转发端口: {ports}")
             print(f"  4. ADB自定义路径: {adb_path if adb_path else '(自动检测)'}")
+            print(f"  5. SSH私钥: {'✓ 已配置' if key_exists else '✗ 未配置'}")
             
             print("\n" + "=" * 50)
             print("  0. 返回")
+            print("  g. 生成SSH密钥并查看公钥")
             print("-" * 50)
             
-            choice = input("\n请选择 (0-4): ").strip()
+            choice = input("\n请选择 (0-5/g): ").strip().lower()
             
             if choice == '0':
                 break
             elif choice == '1':
                 self.config_ssh_param('port', 'SSH端口', '在手机执行: grep Port ~/.ssh/sshd_config')
             elif choice == '2':
+                self.config_ssh_param('user', 'SSH用户名', '在手机执行: whoami')
+            elif choice == '3':
+                self.config_forward_ports()
+            elif choice == '4':
+                self.config_adb_path()
+            elif choice == '5':
+                self.config_ssh_key()
+            elif choice == 'g':
+                self.generate_ssh_key()
                 self.config_ssh_param('user', 'SSH用户名', '在手机执行: whoami')
             elif choice == '3':
                 self.config_forward_ports()
@@ -949,6 +1233,96 @@ class PhoneCLI:
                 print("\n✓ 将使用自动检测")
         else:
             print("\n✗ 保存失败")
+
+    def config_ssh_key(self):
+        """配置SSH私钥路径"""
+        self.print_header()
+        print("\n[配置] SSH 私钥路径")
+        print("=" * 50)
+        
+        current = self.config.get('ssh_config', {}).get('private_key', '')
+        print(f"当前值: {current if current else '(默认: %USERPROFILE%\\.ssh\\id_rsa)'}")
+        
+        print("\n说明:")
+        print("-" * 50)
+        print("留空使用默认路径，或输入完整私钥路径")
+        print("例如: C:\\Users\\YourName\\.ssh\\id_rsa")
+        print("-" * 50)
+        
+        new_value = input("\n请输入私钥路径 (留空使用默认): ").strip()
+        
+        if 'ssh_config' not in self.config:
+            self.config['ssh_config'] = {}
+        
+        self.config['ssh_config']['private_key'] = new_value
+        
+        if self.save_config():
+            print(f"\n✓ 私钥路径已更新")
+        else:
+            print("\n✗ 保存失败")
+
+    def generate_ssh_key(self):
+        """生成SSH密钥并显示公钥"""
+        import os
+        self.print_header()
+        print("\n[功能] 生成SSH密钥")
+        print("=" * 50)
+        
+        user_home = os.path.expandvars('%USERPROFILE%')
+        ssh_dir = os.path.join(user_home, '.ssh')
+        private_key = os.path.join(ssh_dir, 'id_rsa')
+        public_key = os.path.join(ssh_dir, 'id_rsa.pub')
+        
+        if os.path.exists(private_key):
+            print("\n密钥已存在，无需生成")
+        else:
+            print("\n正在生成SSH密钥...")
+            os.makedirs(ssh_dir, exist_ok=True)
+            
+            result = subprocess.run(
+                f'ssh-keygen -t rsa -f "{private_key}" -N "" -C "openclaw-android-helper"',
+                shell=True, capture_output=True, text=True
+            )
+            
+            if result.returncode == 0:
+                print("✓ 密钥生成成功")
+            else:
+                print(f"✗ 生成失败: {result.stderr}")
+                return
+        
+        print("\n" + "=" * 50)
+        print("【公钥内容】（需要添加到手机）:")
+        print("=" * 50)
+        
+        try:
+            with open(public_key, 'r') as f:
+                pub_key = f.read().strip()
+            print(pub_key)
+        except:
+            print("无法读取公钥文件")
+            return
+        
+        print("\n" + "=" * 50)
+        print("【添加到手机的方法】:")
+        print("=" * 50)
+        print("\n方法1: 通过ADB（推荐，需要USB连接）:")
+        print("  1. 手机用USB连接电脑，开启USB调试")
+        print("  2. 电脑执行: adb tcpip 5555")
+        print("  3. 手机Termux执行: adb connect localhost:5555")
+        print("  4. 电脑执行:")
+        print(f'     adb shell "echo \'{pub_key}\' >> ~/.ssh/authorized_keys"')
+        
+        print("\n方法2: 手动添加到手机:")
+        print("  1. 在手机Termux执行: nano ~/.ssh/authorized_keys")
+        print("  2. 将上方公钥内容粘贴进去")
+        print("  3. 按Ctrl+O保存，Ctrl+X退出")
+        
+        print("\n添加完成后，配置文件中已自动设置私钥路径")
+        
+        if 'ssh_config' not in self.config:
+            self.config['ssh_config'] = {}
+        self.config['ssh_config']['private_key'] = '%USERPROFILE%\\.ssh\\id_rsa'
+        self.save_config()
 
     def menu_services_config(self):
         """服务配置子菜单"""
@@ -1060,7 +1434,8 @@ class PhoneCLI:
         print("   查找 wlan0 或 eth0 的 IP 地址")
         print("\n2. 也可以在路由器管理界面查看")
         print("-" * 50)
-        print(f"\n当前网络: {self.wifi}")
+        wifi_display = "本地网络" if self.wifi == "未知" else self.wifi
+        print(f"\n当前网络: {wifi_display}")
         print(f"当前 IP: {self.phone_ip}")
 
         new_ip = input("\n请输入新的手机 IP (留空取消): ").strip()
@@ -1105,7 +1480,8 @@ class PhoneCLI:
         print("或")
         print("  hostname -I")
         print("-" * 50)
-        print(f"\n当前网络: {self.wifi}")
+        wifi_display = "本地网络" if self.wifi == "未知" else self.wifi
+        print(f"\n当前网络: {wifi_display}")
         print(f"当前 IP: {self.phone_ip}")
         print()
 
@@ -1132,11 +1508,10 @@ class PhoneCLI:
             self.print_header()
             self.print_menu()
 
-            choice = input("\n请选择功能 (0-7/c/i): ").strip().lower()
+            choice = input("\n请选择功能 (0-8/c/i): ").strip().lower()
 
             if choice == '0':
-                print("\n再见！")
-                break
+                self.menu_init_all()
             elif choice == '1':
                 self.menu_status()
             elif choice == '2':
@@ -1155,10 +1530,13 @@ class PhoneCLI:
                 self.menu_cleanup()
             elif choice == 'i':
                 self.menu_config()
+            elif choice == 'q':
+                print("\n再见！")
+                break
             else:
                 print("\n无效选择，请重试")
 
-            if choice != '0':
+            if choice != 'q':
                 input("\n按回车键返回主菜单...")
 
 def main():

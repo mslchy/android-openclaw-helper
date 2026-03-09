@@ -100,6 +100,7 @@ python phone_cli.py
 
 ```
 主菜单:
+  0. 初始化设置（首次使用）
   1. 系统状态检查
   2. 建立 SSH 隧道
   3. 打开 Web UI
@@ -109,7 +110,7 @@ python phone_cli.py
   7. 恢复 ADB 连接
   c. 清理 SSH 隧道
   i. 自定义配置
-  0. 退出
+  q. 退出
 ```
 
 ## 配置文件说明
